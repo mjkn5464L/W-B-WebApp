@@ -80,33 +80,39 @@
     function App() {
       // --- State ---
       const [activeTab, setActiveTab] = useState('calc');
-      const [config, setConfig] = useState(DEFAULT_CONFIG);
-      const [calcData, setCalcData] = useState({});
-      const [isLoaded, setIsLoaded] = useState(false);
+      
+      // Initialize state directly from LocalStorage to prevent reset race conditions
+      const [config, setConfig] = useState(() => {
+        try {
+          const savedConfig = localStorage.getItem('wb_aircraft_config');
+          return savedConfig ? JSON.parse(savedConfig) : DEFAULT_CONFIG;
+        } catch (e) {
+          console.error("Error loading config from localStorage", e);
+          return DEFAULT_CONFIG;
+        }
+      });
+      
+      const [calcData, setCalcData] = useState(() => {
+        try {
+          const savedData = localStorage.getItem('wb_calc_data');
+          return savedData ? JSON.parse(savedData) : {};
+        } catch (e) {
+          console.error("Error loading calc data from localStorage", e);
+          return {};
+        }
+      });
 
       const [draggingPointIdx, setDraggingPointIdx] = useState(null);
       const svgRef = useRef(null);
 
-      // Load from Local Storage on mount
+      // Save to Local Storage immediately on any change
       useEffect(() => {
-        const savedConfig = localStorage.getItem('wb_aircraft_config');
-        if (savedConfig) {
-          try { setConfig(JSON.parse(savedConfig)); } catch (e) { console.error("Error loading config"); }
-        }
-        const savedData = localStorage.getItem('wb_calc_data');
-        if (savedData) {
-          try { setCalcData(JSON.parse(savedData)); } catch (e) { console.error("Error loading data"); }
-        }
-        setIsLoaded(true);
-      }, []);
+        localStorage.setItem('wb_aircraft_config', JSON.stringify(config));
+      }, [config]);
 
-      // Save to Local Storage on change
       useEffect(() => {
-        if (isLoaded) {
-          localStorage.setItem('wb_aircraft_config', JSON.stringify(config));
-          localStorage.setItem('wb_calc_data', JSON.stringify(calcData));
-        }
-      }, [config, calcData, isLoaded]);
+        localStorage.setItem('wb_calc_data', JSON.stringify(calcData));
+      }, [calcData]);
 
       // --- Calculations ---
       const getStationWeight = (station) => {
@@ -610,8 +616,6 @@
           </div>
         );
       }
-
-      if (!isLoaded) return <div className="p-8 text-center text-gray-500">Loading...</div>;
 
       return (
         <div className="min-h-screen bg-gray-50 font-sans text-gray-900 selection:bg-blue-100 pb-20">
