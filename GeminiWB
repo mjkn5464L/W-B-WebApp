@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <!-- Crucial meta tags to make it behave like a native iOS app -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="W&B Calc">
+  <!-- Airplane App Icon for the Home Screen -->
+  <link rel="apple-touch-icon" href="https://upload.wikimedia.org/wikipedia/commons/thumb/1/18/Airplane_icon.svg/512px-Airplane_icon.svg.png">
+  
+  <title>Aviation W&B Calculator</title>
+  
+  <!-- Load Tailwind CSS for styling -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Load React directly from CDN -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  
+  <!-- Load Babel to translate JSX in the browser -->
+  <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="bg-gray-50 select-none">
+  <!-- The React app will inject here -->
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useCallback, useRef } = React;
+
+    // --- Inline Icons (Replacing lucide-react for standalone usage) ---
+    const Settings = ({ className }) => <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>;
+    const Calculator = ({ className }) => <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>;
+    const LineChart = ({ className }) => <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" /></svg>;
+    const Plus = ({ className }) => <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>;
+    const Trash2 = ({ className }) => <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>;
+    const AlertTriangle = ({ className }) => <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>;
+    const CheckCircle = ({ className }) => <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>;
+
+    // --- Default Configuration (Based roughly on a Cessna 172) ---
+    const DEFAULT_CONFIG = {
+      aircraftName: "N12345 (C172)",
+      bew: 1650.0,
+      bewArm: 40.0,
+      chart: {
+        minCg: 30,
+        maxCg: 50,
+        minWeight: 1400,
+        maxWeight: 2600
+      },
+      envelopePoints: [
+        { cg: 35.0, weight: 1500 },
+        { cg: 35.0, weight: 1950 },
+        { cg: 41.0, weight: 2550 },
+        { cg: 47.3, weight: 2550 },
+        { cg: 47.3, weight: 1500 }
+      ],
+      stations: [
+        { id: 'front', name: 'Pilot & Front Pax', arm: 37.0, isFuel: false },
+        { id: 'rear', name: 'Rear Passengers', arm: 73.0, isFuel: false },
+        { id: 'bag1', name: 'Baggage Area 1', arm: 95.0, isFuel: false },
+        { id: 'fuel', name: 'Fuel (Gallons)', arm: 48.0, isFuel: true }
+      ]
+    };
+
+    // --- Helper Functions ---
+    const isPointInPolygon = (point, vs) => {
+      let x = point[0], y = point[1];
+      let inside = false;
+      for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+        let xi = vs[i].cg, yi = vs[i].weight;
+        let xj = vs[j].cg, yj = vs[j].weight;
+        let intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+        if (intersect) inside = !inside;
+      }
+      return inside;
+    };
+
+    function App() {
+      // --- State ---
+      const [activeTab, setActiveTab] = useState('calc');
+      const [config, setConfig] = useState(DEFAULT_CONFIG);
+      const [calcData, setCalcData] = useState({});
+      const [isLoaded, setIsLoaded] = useState(false);
+
+      const [draggingPointIdx, setDraggingPointIdx] = useState(null);
+      const svgRef = useRef(null);
+
+      // Load from Local Storage on mount
+      useEffect(() => {
+        const savedConfig = localStorage.getItem('wb_aircraft_config');
+        if (savedConfig) {
+          try { setConfig(JSON.parse(savedConfig)); } catch (e) { console.error("Error loading config"); }
+        }
+        const savedData = localStorage.getItem('wb_calc_data');
+        if (savedData) {
+          try { setCalcData(JSON.parse(savedData)); } catch (e) { console.error("Error loading data"); }
+        }
+        setIsLoaded(true);
+      }, []);
+
+      // Save to Local Storage on change
+      useEffect(() => {
+        if (isLoaded) {
+          localStorage.setItem('wb_aircraft_config', JSON.stringify(config));
+          localStorage.setItem('wb_calc_data', JSON.stringify(calcData));
+        }
+      }, [config, calcData, isLoaded]);
+
+      // --- Calculations ---
+      const getStationWeight = (station) => {
+        const rawVal = parseFloat(calcData[station.id]) || 0;
+        return station.isFuel ? rawVal * 6 : rawVal; 
+      };
+
+      const totals = React.useMemo(() => {
+        let totalWeight = config.bew;
+        let totalMoment = config.bew * config.bewArm;
+
+        config.stations.forEach(station => {
+          const weight = getStationWeight(station);
+          totalWeight += weight;
+          totalMoment += weight * station.arm;
+        });
+
+        // MOMENT / 1000 Logic added here
+        const cg = totalMoment / 1000;
+        const isSafe = isPointInPolygon([cg, totalWeight], config.envelopePoints);
+
+        return { totalWeight, totalMoment, cg, isSafe };
+      }, [config, calcData]);
+
+      // --- Handlers ---
+      const handleCalcInputChange = (id, value) => {
+        setCalcData(prev => ({ ...prev, [id]: value }));
+      };
+
+      const handleConfigChange = (field, value) => {
+        setConfig(prev => ({ ...prev, [field]: value }));
+      };
+
+      const updateStation = (index, field, value) => {
+        const newStations = [...config.stations];
+        if (field === 'arm') value = parseFloat(value) || 0;
+        newStations[index][field] = value;
+        handleConfigChange('stations', newStations);
+      };
+
+      const addStation = () => {
+        const newId = `station_${Date.now()}`;
+        handleConfigChange('stations', [...config.stations, { id: newId, name: 'New Station', arm: 0, isFuel: false }]);
+      };
+
+      const removeStation = (index) => {
+        const newStations = [...config.stations];
+        const removedId = newStations[index].id;
+        newStations.splice(index, 1);
+        handleConfigChange('stations', newStations);
+        
+        const newCalcData = { ...calcData };
+        delete newCalcData[removedId];
+        setCalcData(newCalcData);
+      };
+
+      const updateEnvelopePoint = (index, field, value) => {
+        const newPoints = [...config.envelopePoints];
+        newPoints[index][field] = parseFloat(value) || 0;
+        handleConfigChange('envelopePoints', newPoints);
+      };
+
+      const addEnvelopePoint = () => {
+        const midCg = (config.chart.minCg + config.chart.maxCg) / 2;
+        const midWeight = (config.chart.minWeight + config.chart.maxWeight) / 2;
+        handleConfigChange('envelopePoints', [...config.envelopePoints, { cg: midCg, weight: midWeight }]);
+      };
+
+      const removeEnvelopePoint = (index) => {
+        if (config.envelopePoints.length <= 3) return; 
+        const newPoints = [...config.envelopePoints];
+        newPoints.splice(index, 1);
+        handleConfigChange('envelopePoints', newPoints);
+      };
+
+      // --- Envelope Chart Coordinate Mapping ---
+      const mapLogicToSvg = (cg, weight) => {
+        const width = 1000; 
+        const height = 1000; 
+        const x = ((cg - config.chart.minCg) / (config.chart.maxCg - config.chart.minCg)) * width;
+        const y = height - ((weight - config.chart.minWeight) / (config.chart.maxWeight - config.chart.minWeight)) * height;
+        return { x, y };
+      };
+
+      const mapSvgToLogic = (x, y) => {
+        const width = 1000;
+        const height = 1000;
+        const cg = config.chart.minCg + ((x / width) * (config.chart.maxCg - config.chart.minCg));
+        const weight = config.chart.minWeight + (((height - y) / height) * (config.chart.maxWeight - config.chart.minWeight));
+        return { cg, weight };
+      };
+
+      const handlePointerDown = (index) => (e) => {
+        e.preventDefault();
+        setDraggingPointIdx(index);
+      };
+
+      const handlePointerMove = useCallback((e) => {
+        if (draggingPointIdx === null || !svgRef.current) return;
+        
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+        const svgRect = svgRef.current.getBoundingClientRect();
+        let xPercent = (clientX - svgRect.left) / svgRect.width;
+        let yPercent = (clientY - svgRect.top) / svgRect.height;
+
+        xPercent = Math.max(0, Math.min(1, xPercent));
+        yPercent = Math.max(0, Math.min(1, yPercent));
+
+        const svgX = xPercent * 1000;
+        const svgY = yPercent * 1000;
+
+        const { cg, weight } = mapSvgToLogic(svgX, svgY);
+
+        const newPoints = [...config.envelopePoints];
+        newPoints[draggingPointIdx] = { 
+          cg: parseFloat(cg.toFixed(2)), 
+          weight: parseFloat(weight.toFixed(0)) 
+        };
+        handleConfigChange('envelopePoints', newPoints);
+      }, [draggingPointIdx, config]);
+
+      const handlePointerUp = useCallback(() => {
+        setDraggingPointIdx(null);
+      }, []);
+
+      useEffect(() => {
+        if (draggingPointIdx !== null) {
+          window.addEventListener('pointermove', handlePointerMove);
+          window.addEventListener('pointerup', handlePointerUp);
+        } else {
+          window.removeEventListener('pointermove', handlePointerMove);
+          window.removeEventListener('pointerup', handlePointerUp);
+        }
+        return () => {
+          window.removeEventListener('pointermove', handlePointerMove);
+          window.removeEventListener('pointerup', handlePointerUp);
+        };
+      }, [draggingPointIdx, handlePointerMove, handlePointerUp]);
+
+      const renderTabButton = (id, icon, label) => (
+        <button
+          onClick={() => setActiveTab(id)}
+          className={`flex-1 flex flex-col items-center justify-center p-3 text-xs sm:text-sm font-medium transition-colors ${
+            activeTab === id ? 'text-blue-600 bg-blue-50 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+          }`}
+        >
+          {icon}
+          <span className="mt-1">{label}</span>
+        </button>
+      );
+
+      const renderCalculator = () => (
+        <div className="space-y-6 animate-fade-in pb-20">
+          <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-6 border border-gray-100">
+            <h2 className="text-xl font-bold text-gray-800 mb-4">{config.aircraftName} - Current Flight</h2>
+            
+            <div className={`p-4 rounded-xl mb-6 flex items-start gap-3 ${totals.isSafe ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
+              {totals.isSafe ? <CheckCircle className="w-6 h-6 shrink-0 mt-0.5" /> : <AlertTriangle className="w-6 h-6 shrink-0 mt-0.5" />}
+              <div>
+                <h3 className="font-bold text-lg">{totals.isSafe ? 'CG is within Limits' : 'CG OUT OF LIMITS'}</h3>
+                <p className="text-sm opacity-90">
+                  Total Weight: <strong>{totals.totalWeight.toFixed(1)} lbs</strong><br/>
+                  Moment/1000: <strong>{totals.cg.toFixed(2)}</strong>
+                </p>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b-2 border-gray-100 text-gray-500 text-sm">
+                    <th className="pb-3 pr-4 font-semibold">Station</th>
+                    <th className="pb-3 pr-4 font-semibold">Weight/Vol</th>
+                    <th className="pb-3 pr-4 font-semibold hidden sm:table-cell">Arm (in)</th>
+                    <th className="pb-3 font-semibold text-right">Moment</th>
+                  </tr>
+                </thead>
+                <tbody className="text-sm sm:text-base">
+                  <tr className="border-b border-gray-50">
+                    <td className="py-3 pr-4 font-medium text-gray-700">Basic Empty Wt</td>
+                    <td className="py-3 pr-4">{config.bew.toFixed(1)}</td>
+                    <td className="py-3 pr-4 hidden sm:table-cell text-gray-500">{config.bewArm.toFixed(1)}</td>
+                    <td className="py-3 text-right text-gray-500">{(config.bew * config.bewArm).toFixed(1)}</td>
+                  </tr>
+                  {config.stations.map((station) => {
+                    const weight = getStationWeight(station);
+                    const moment = weight * station.arm;
+                    return (
+                      <tr key={station.id} className="border-b border-gray-50">
+                        <td className="py-3 pr-4 text-gray-700">{station.name}</td>
+                        <td className="py-3 pr-4">
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              inputMode="decimal"
+                              value={calcData[station.id] || ''}
+                              onChange={(e) => handleCalcInputChange(station.id, e.target.value)}
+                              placeholder="0"
+                              className="w-20 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-right"
+                            />
+                            <span className="text-xs text-gray-400">{station.isFuel ? 'gal' : 'lbs'}</span>
+                          </div>
+                        </td>
+                        <td className="py-3 pr-4 hidden sm:table-cell text-gray-500">{station.arm.toFixed(1)}</td>
+                        <td className="py-3 text-right text-gray-500">{moment.toFixed(1)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot className="border-t-2 border-gray-200 font-bold bg-gray-50/50">
+                  <tr>
+                    <td className="py-4 pr-4">TOTALS</td>
+                    <td className="py-4 pr-4 text-blue-600">{totals.totalWeight.toFixed(1)}</td>
+                    <td className="py-4 pr-4 hidden sm:table-cell text-blue-600">{totals.cg.toFixed(2)}</td>
+                    <td className="py-4 text-right text-blue-600">{totals.totalMoment.toFixed(1)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-2xl shadow-sm p-4 border border-gray-100 flex flex-col items-center">
+            <h3 className="text-sm font-bold text-gray-500 mb-4 w-full text-left uppercase tracking-wider">Visual Envelope Check</h3>
+            <div className="w-full max-w-sm aspect-square bg-gray-50 rounded-xl relative border border-gray-200 overflow-hidden">
+              <svg viewBox="0 0 1000 1000" className="w-full h-full">
+                <polygon
+                  points={config.envelopePoints.map(p => {
+                    const mapped = mapLogicToSvg(p.cg, p.weight);
+                    return `${mapped.x},${mapped.y}`;
+                  }).join(' ')}
+                  fill="rgba(59, 130, 246, 0.1)"
+                  stroke="#3b82f6"
+                  strokeWidth="4"
+                  strokeLinejoin="round"
+                />
+                {totals.totalWeight > 0 && (
+                  <circle
+                    cx={mapLogicToSvg(totals.cg, totals.totalWeight).x}
+                    cy={mapLogicToSvg(totals.cg, totals.totalWeight).y}
+                    r="15"
+                    fill={totals.isSafe ? "#10b981" : "#ef4444"}
+                    className="transition-all duration-300"
+                  />
+                )}
+              </svg>
+              <div className="absolute top-2 right-2 text-xs text-gray-400 bg-white/80 px-2 py-1 rounded shadow-sm">
+                 Mini View (Not to scale)
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+
+      const renderSetup = () => (
+        <div className="space-y-6 animate-fade-in pb-20">
+          <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-6 border border-gray-100">
+            <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+              <Settings className="w-6 h-6 text-gray-400" />
+              Aircraft Base Stats
+            </h2>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-1">Tail Number / Name</label>
+                <input
+                  type="text"
+                  value={config.aircraftName}
+                  onChange={(e) => handleConfigChange('aircraftName', e.target.value)}
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-1">Basic Empty Weight (lbs)</label>
+                <input
+                  type="number"
+                  value={config.bew}
+                  onChange={(e) => handleConfigChange('bew', parseFloat(e.target.value) || 0)}
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-1">BEW Arm (in)</label>
+                <input
+                  type="number"
+                  value={config.bewArm}
+                  onChange={(e) => handleConfigChange('bewArm', parseFloat(e.target.value) || 0)}
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-6 border border-gray-100">
+            <h2 className="text-xl font-bold text-gray-800 mb-4">Stations Setup</h2>
+            <p className="text-sm text-gray-500 mb-4">Define arms for seats, baggage areas, and fuel tanks.</p>
+
+            <div className="space-y-4">
+              {config.stations.map((station, index) => (
+                <div key={station.id} className="flex flex-col sm:flex-row gap-3 p-4 bg-gray-50 border border-gray-100 rounded-xl relative group">
+                  <div className="flex-1">
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Station Name</label>
+                    <input
+                      type="text"
+                      value={station.name}
+                      onChange={(e) => updateStation(index, 'name', e.target.value)}
+                      className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                  </div>
+                  <div className="sm:w-32">
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Arm (in)</label>
+                    <input
+                      type="number"
+                      value={station.arm}
+                      onChange={(e) => updateStation(index, 'arm', e.target.value)}
+                      className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                  </div>
+                  <div className="sm:w-24 flex items-end pb-1">
+                    <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={station.isFuel}
+                        onChange={(e) => updateStation(index, 'isFuel', e.target.checked)}
+                        className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                      />
+                      Is Fuel?
+                    </label>
+                  </div>
+                  <button 
+                    onClick={() => removeStation(index)}
+                    className="absolute top-2 right-2 sm:relative sm:top-0 sm:right-0 sm:self-end sm:mb-2 text-red-400 hover:text-red-600 p-2"
+                    title="Remove Station"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button
+              onClick={addStation}
+              className="mt-4 flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+            >
+              <Plus className="w-5 h-5" /> Add Station
+            </button>
+          </div>
+        </div>
+      );
+
+      const renderEnvelope = () => {
+        const gridLinesX = [];
+        for (let i = Math.ceil(config.chart.minCg); i <= Math.floor(config.chart.maxCg); i++) {
+          if (i % 2 === 0) gridLinesX.push(i);
+        }
+        const gridLinesY = [];
+        const yStep = (config.chart.maxWeight - config.chart.minWeight) > 1000 ? 500 : 200;
+        for (let i = Math.ceil(config.chart.minWeight/yStep)*yStep; i <= config.chart.maxWeight; i += yStep) {
+          gridLinesY.push(i);
+        }
+
+        return (
+          <div className="space-y-6 animate-fade-in pb-20">
+            <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-6 border border-gray-100">
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h2 className="text-xl font-bold text-gray-800">Flight Envelope Builder</h2>
+                  <p className="text-sm text-gray-500">Drag points to draw the valid CG limits area.</p>
+                </div>
+              </div>
+
+              <div className="relative w-full aspect-[4/3] max-h-[60vh] bg-gray-50 border border-gray-200 rounded-xl overflow-hidden touch-none select-none">
+                <div className="absolute left-1 top-0 bottom-8 w-12 flex flex-col justify-between items-end pointer-events-none py-4">
+                   <span className="text-[10px] text-gray-400 font-medium">LBS</span>
+                   {gridLinesY.slice().reverse().map(y => (
+                      <span key={`y-${y}`} className="text-[10px] text-gray-400" style={{position: 'absolute', top: `${mapLogicToSvg(0, y).y / 10}%`, right: '4px', transform: 'translateY(-50%)'}}>{y}</span>
+                   ))}
+                </div>
+
+                <svg 
+                  ref={svgRef}
+                  viewBox="0 0 1000 1000" 
+                  className="w-full h-full pl-12 pb-8 cursor-crosshair"
+                  preserveAspectRatio="none"
+                >
+                  {gridLinesX.map(x => (
+                    <line key={`gx-${x}`} x1={mapLogicToSvg(x, 0).x} y1="0" x2={mapLogicToSvg(x, 0).x} y2="1000" stroke="#e5e7eb" strokeWidth="2" strokeDasharray="10,10" />
+                  ))}
+                  {gridLinesY.map(y => (
+                    <line key={`gy-${y}`} x1="0" y1={mapLogicToSvg(0, y).y} x2="1000" y2={mapLogicToSvg(0, y).y} stroke="#e5e7eb" strokeWidth="2" strokeDasharray="10,10" />
+                  ))}
+
+                  <polygon
+                    points={config.envelopePoints.map(p => {
+                      const mapped = mapLogicToSvg(p.cg, p.weight);
+                      return `${mapped.x},${mapped.y}`;
+                    }).join(' ')}
+                    fill="rgba(59, 130, 246, 0.15)"
+                    stroke="#2563eb"
+                    strokeWidth="4"
+                    strokeLinejoin="round"
+                  />
+
+                  {config.envelopePoints.map((p, i) => {
+                    const mapped = mapLogicToSvg(p.cg, p.weight);
+                    const isDragging = draggingPointIdx === i;
+                    return (
+                      <g key={`handle-${i}`} transform={`translate(${mapped.x}, ${mapped.y})`}>
+                        <circle
+                          r={isDragging ? "30" : "20"}
+                          fill="transparent"
+                          className="cursor-move"
+                          onPointerDown={handlePointerDown(i)}
+                          style={{ touchAction: 'none' }}
+                        />
+                        <circle
+                          r="12"
+                          fill={isDragging ? "#1d4ed8" : "#fff"}
+                          stroke="#2563eb"
+                          strokeWidth="4"
+                          className="pointer-events-none transition-colors"
+                        />
+                      </g>
+                    );
+                  })}
+                </svg>
+
+                <div className="absolute bottom-0 left-12 right-0 h-8 flex justify-between items-center pointer-events-none px-2">
+                    {gridLinesX.map(x => (
+                       <span key={`x-${x}`} className="text-[10px] text-gray-400" style={{position: 'absolute', left: `${mapLogicToSvg(x, 0).x / 10}%`, transform: 'translateX(-50%)'}}>{x}</span>
+                    ))}
+                    <span className="text-[10px] text-gray-400 font-medium absolute right-2">MOM/1000</span>
+                </div>
+              </div>
+
+              <div className="mt-8">
+                <h3 className="text-md font-bold text-gray-700 mb-3">Exact Coordinates</h3>
+                <div className="space-y-3">
+                  {config.envelopePoints.map((point, index) => (
+                    <div key={index} className="flex gap-3 items-center bg-gray-50 p-3 rounded-lg border border-gray-100">
+                      <span className="text-sm font-bold text-gray-400 w-6">{index + 1}.</span>
+                      <div className="flex-1">
+                        <label className="block text-[10px] uppercase text-gray-500 font-semibold mb-1">Mom/1000 (X)</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={point.cg}
+                          onChange={(e) => updateEnvelopePoint(index, 'cg', e.target.value)}
+                          className="w-full px-2 py-1.5 text-sm bg-white border border-gray-200 rounded focus:ring-1 focus:ring-blue-500 outline-none"
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <label className="block text-[10px] uppercase text-gray-500 font-semibold mb-1">Weight (Y)</label>
+                        <input
+                          type="number"
+                          step="1"
+                          value={point.weight}
+                          onChange={(e) => updateEnvelopePoint(index, 'weight', e.target.value)}
+                          className="w-full px-2 py-1.5 text-sm bg-white border border-gray-200 rounded focus:ring-1 focus:ring-blue-500 outline-none"
+                        />
+                      </div>
+                      <button 
+                        onClick={() => removeEnvelopePoint(index)}
+                        disabled={config.envelopePoints.length <= 3}
+                        className="mt-4 p-2 text-gray-400 hover:text-red-500 disabled:opacity-50"
+                      >
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                
+                <button
+                  onClick={addEnvelopePoint}
+                  className="mt-4 flex items-center justify-center w-full gap-2 px-4 py-3 text-sm font-bold text-blue-600 bg-blue-50 border border-blue-100 rounded-xl hover:bg-blue-100 transition-colors"
+                >
+                  <Plus className="w-5 h-5" /> Add Point to Envelope
+                </button>
+              </div>
+
+              <div className="mt-8 pt-6 border-t border-gray-100">
+                 <h3 className="text-md font-bold text-gray-700 mb-4">Chart Display Bounds</h3>
+                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    {['minCg', 'maxCg', 'minWeight', 'maxWeight'].map(bound => (
+                      <div key={bound}>
+                        <label className="block text-xs font-medium text-gray-500 mb-1 capitalize">{bound.replace(/([A-Z])/g, ' $1').trim()}</label>
+                        <input
+                          type="number"
+                          value={config.chart[bound]}
+                          onChange={(e) => {
+                             const val = parseFloat(e.target.value) || 0;
+                             handleConfigChange('chart', { ...config.chart, [bound]: val });
+                          }}
+                          className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                        />
+                      </div>
+                    ))}
+                 </div>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      if (!isLoaded) return <div className="p-8 text-center text-gray-500">Loading...</div>;
+
+      return (
+        <div className="min-h-screen bg-gray-50 font-sans text-gray-900 selection:bg-blue-100 pb-20">
+          <header className="bg-white border-b border-gray-200 sticky top-0 z-10 pt-safe">
+            <div className="max-w-3xl mx-auto px-4 h-14 flex items-center justify-center">
+              <h1 className="text-lg font-bold text-gray-800 tracking-tight flex items-center gap-2">
+                ✈️ W&B Calculator
+              </h1>
+            </div>
+          </header>
+
+          <main className="max-w-3xl mx-auto p-4 sm:p-6">
+            {activeTab === 'calc' && renderCalculator()}
+            {activeTab === 'setup' && renderSetup()}
+            {activeTab === 'envelope' && renderEnvelope()}
+          </main>
+
+          <nav className="fixed bottom-0 w-full bg-white border-t border-gray-200 pb-safe shadow-[0_-4px_6px_-1px_rgb(0,0,0,0.05)]">
+            <div className="max-w-3xl mx-auto flex h-16 sm:h-20 pb-2 sm:pb-4">
+              {renderTabButton('calc', <Calculator className="w-6 h-6" />, 'Flight')}
+              {renderTabButton('setup', <Settings className="w-6 h-6" />, 'Aircraft')}
+              {renderTabButton('envelope', <LineChart className="w-6 h-6" />, 'Envelope')}
+            </div>
+          </nav>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
